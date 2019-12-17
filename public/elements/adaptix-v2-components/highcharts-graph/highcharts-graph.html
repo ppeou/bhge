@@ -1,0 +1,2711 @@
+<link rel="import" href="../../../bower_components/polymer/polymer.html">
+<link rel="import" href="../../../bower_components/iron-ajax/iron-ajax.html">
+<link rel="import" href="../../../bower_components/marked-element/marked-element.html">
+<link rel="import" href="../../../bower_components/px-datetime-range-field/px-datetime-range-field.html">
+<link rel="import" href="../../../bower_components/iron-flex-layout/iron-flex-layout-classes.html">
+<link rel="import" href="../../adaptix-custom-elements/custom-google-chart/custom-google-chart.html">
+
+<dom-module id="highcharts-graph">
+  <template>
+    <style include="iron-flex iron-flex-alignment">
+      #card {
+        background-color: #202327;
+        color: white;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+      }
+
+    </style>
+
+    <iron-ajax id="ajaxGraphData" url="https://adaptix-backend-app-dev.run.aws-usw02-pr.ice.predix.io/api/v1/wellview" params$='{{_getwellviewParams}}' handle-as="json" headers='{{_headers}}' last-response={{wellViewResponse}} on-response="requestData"></iron-ajax>
+
+    <div class="main" style="width: 100%; height: 100%; position: relative;">
+      <div id="card">
+        <div id="[[chartid]]" style="width: 100%; height: 100%;"></div>
+
+      </div>
+
+    </div>
+
+  </template>
+
+  <!-- <script src="https://code.highcharts.com/highcharts.src.js"></script> -->
+  <script defer src="../../../bower_components/highcharts/modules/exporting.js"></script>
+  <script defer src="../../../bower_components/highcharts/modules/export-data.js"></script>
+  <script>
+    if (!window.chartLegend) {
+      window.chartLegend = {};
+    }
+    Polymer({
+      is: 'highcharts-graph',
+
+      properties: {
+        chart: Object,
+        chartid: {
+          type: String
+        },
+
+        refreshInterval: {
+          type: String
+        },
+        series: {
+          type: Object
+        },
+        timeseriesSettings: {
+          type: Object,
+          notify: true,
+          observer: "timeseriesSettingsChanged"
+        },
+        yAxis: {
+          type: Object
+        },
+
+        plotlines: {
+          type: Array,
+          notify: true,
+          value: []
+        },
+        vapourPlotlines: {
+          type: Object,
+          notify: true
+        },
+        producedGasPlotlines: {
+          type: Object,
+          notify: true
+        },
+        bswPlotlines: {
+          type: Object,
+          notify: true
+        },
+        bhtPlotlines: {
+          type: Object,
+          notify: true
+        },
+
+        graphStatSettings: {
+          type: Array,
+          value: []
+        },
+
+        returnPressurePlotlines: {
+          type: Object,
+          notify: true
+        },
+        suddenPressurePlotlines: {
+          type: Object,
+          notify: true
+        },
+        sagdPressurePlotlines: {
+          type: Object,
+          notify: true
+        },
+        setPointsPlotlines: {
+          type: Object,
+          notify: true
+        },
+        modelInfoPlotlines: {
+          type: Object,
+          notify: true
+        },
+        modelInfoVapourPlotlines: {
+          type: Object,
+          notify: true
+        },
+        modelInfoProducedGasPlotlines: {
+          type: Object,
+          notify: true
+        },
+
+        modelInfoEmulsionPlotlines: {
+          type: Object,
+          notify: true
+        },
+        xAxis: {
+          type: Object,
+          value: {
+            type: 'datetime',
+            dateTimeLabelFormats: { // don't display the dummy year
+              millisecond: '%H:%M',
+              second: '%H:%M',
+              minute: '%H:%M',
+              hour: '%H:%M',
+              day: '%m/%d/%Y',
+              week: '%m/%d/%Y',
+              month: '%m/%d/%Y',
+              year: '%m/%d/%Y'
+            },
+            title: {
+              text: 'Date',
+              enabled: false
+            },
+            minorGridLineWidth: 1,
+            gridLineWidth: 1,
+            alternateGridColor: null,
+            tickAmount: 7,
+            startOnTick: true,
+            endOnTick: true,
+            events: {
+              setExtremes: function(event) {
+                var parent = this["chart"]["renderTo"].parent;
+                parent.xAxis["min"] = event.min;
+                parent.xAxis["max"] = event.max;
+              }
+            }
+          }
+        },
+        selectedColor: {
+          type: Object,
+          value: "white"
+        },
+        minXaxis: {
+          type: Object,
+          notify: true
+        },
+        maxXaxis: {
+          type: Object,
+          notify: true
+        },
+        refreshTimer: {
+          type: Number,
+          notify: true
+        }
+      },
+
+      attached: function() {
+        this.getAlertMarker(this.domHost.domHost.riskData);
+        this.configureYAxis();
+        this.configureThemes();
+        this.configureChart();
+
+        this.$$('#' + this.chartid).parent = this;
+
+        if (this.chartid === "detailedVMFelistChart" || this.chartid === "detailedChart") {
+          this._headers = {
+            "Content-Type": 'application/x-www-form-urlencoded',
+            'token': this.domHost.domHost.domHost.accessToken
+          };
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.domHost.loggedUser,
+            "start": "5mi-ago",
+            "graph": "Setpoints"
+          };
+        }
+
+        if (this.domHost.domHost.accessToken !== undefined) {
+          this._headers = {
+            "Content-Type": 'application/x-www-form-urlencoded',
+            'token': this.domHost.domHost.accessToken
+          }
+        }
+
+        if (this.chartid === 'chart1' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": "5mi-ago",
+            "graph": "Emulsion"
+          };
+        }
+        if (this.chartid === 'chart2' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": "5mi-ago",
+            "graph": "Vapour"
+          };
+        }
+        if (this.chartid === 'chart3' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": "5mi-ago",
+            "graph": "Produced_Gas"
+          };
+        }
+        if (this.chartid === 'chart4' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": "5mi-ago",
+            "graph": "BSW"
+          };
+        }
+        if (this.chartid === 'chart5' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": "5mi-ago",
+            "graph": "BHT"
+          };
+        }
+        if (this.chartid === 'chart6' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": "5mi-ago",
+            "graph": "Return_Pressure"
+          };
+        }
+        if (this.chartid === 'chart7' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": "5mi-ago",
+            "graph": "Sudden_Pressure"
+          };
+        }
+        if (this.chartid === 'chart8' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": "5mi-ago",
+            "graph": "SAGD_Pressure"
+          };
+        }
+        if (this.chartid === 'chart9' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": "5mi-ago",
+            "graph": "Setpoints"
+          };
+        }
+
+
+        if (this.domHost.domHost.showmyAlerts === false) {
+          clearInterval(this.refreshTimer);
+          this.refreshInterval = "5mi-ago";
+          this.refreshTimer = setInterval(() => {
+            if (this.domHost.domHost.showmyAlerts === false) {
+              this._updateData();
+            }
+          }, 300000);
+        }
+      },
+      detached: function() {
+        clearInterval(this.refreshTimer);
+      },
+
+      _updateData: function() {
+
+        if (this.domHost.domHost.showmyAlerts === false) {
+          if (this.domHost.domHost.isRefreshDropdownChanged === true) {
+            if (this.domHost.domHost.graphRefreshTimeInterval === 0) {
+              clearInterval(this.refreshTimer);
+              this.refreshTimer = 0;
+            } else {
+              clearInterval(this.refreshTimer);
+              if (this.domHost.domHost.graphRefreshTimeInterval === 300000) {
+                this.refreshInterval = "5mi-ago";
+              } else if (this.domHost.domHost.graphRefreshTimeInterval === 600000) {
+                this.refreshInterval = "10mi-ago";
+              } else {
+                this.refreshInterval = "15mi-ago";
+              }
+              this.refreshTimer = setInterval(() => {
+                if (this.domHost.domHost.showmyAlerts === false) {
+                  this._updateData();
+                }
+              }, this.domHost.domHost.graphRefreshTimeInterval);
+            }
+          }
+        }
+
+
+        if (this.domHost.domHost.accessToken !== undefined) {
+          this._headers = {
+            "Content-Type": 'application/x-www-form-urlencoded',
+            'token': this.domHost.domHost.accessToken
+          }
+        }
+        if (this.chartid === 'chart1' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": this.refreshInterval,
+            "graph": "Emulsion"
+          };
+        }
+        if (this.chartid === 'chart2' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": this.refreshInterval,
+            "graph": "Vapour"
+          };
+        }
+        if (this.chartid === 'chart3' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": this.refreshInterval,
+            "graph": "Produced_Gas"
+          };
+        }
+        if (this.chartid === 'chart4' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": this.refreshInterval,
+            "graph": "BSW"
+          };
+        }
+        if (this.chartid === 'chart5' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": this.refreshInterval,
+            "graph": "BHT"
+          };
+        }
+        if (this.chartid === 'chart6' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": this.refreshInterval,
+            "graph": "Return_Pressure"
+          };
+        }
+        if (this.chartid === 'chart7' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": this.refreshInterval,
+            "graph": "Sudden_Pressure"
+          };
+        }
+        if (this.chartid === 'chart8' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": this.refreshInterval,
+            "graph": "SAGD_Pressure"
+          };
+        }
+        if (this.chartid === 'chart9' && this.domHost.domHost.wellId !== undefined && this.domHost.domHost.padId !== undefined) {
+          this._getwellviewParams = {
+            'well_id': this.domHost.domHost.wellId,
+            'pad_id': this.domHost.domHost.padId,
+            "user_id": this.domHost.domHost.loggedUser,
+            "start": this.refreshInterval,
+            "graph": "Setpoints"
+          };
+        }
+
+        this.$.ajaxGraphData.generateRequest();
+
+      },
+
+      parseAlertMarker: function(graphName, graphData) {
+        if (graphData && graphData.length > 0) {
+          var tempArray = [];
+          for (var i = 0; i < graphData.length; i++) {
+            var temp = {};
+            var temp1 = {};
+            var labeltext = {};
+            var labelStyle = {};
+            var alertName = graphData[i]["alert_group"];
+            var alertTime = graphData[i]["start_time"];
+            var alertStatus = graphData[i]["alert_current_status"];
+            var alertDetails = graphData[i]["alert_name"];
+            var alertLimit = graphData[i]["limit"];
+            var alertEndtime = graphData[i]["end_time"];
+
+            if (alertEndtime !== null) {
+              if (alertDetails != "Pump Status") {
+                var templabeltext = alertDetails + "<br>" + "L: " + alertLimit + "<br>" + "E: " + alertEndtime;
+              } else {
+                var templabeltext = alertDetails + "<br>" + "E: " + alertEndtime;
+              }
+            } else {
+              if (alertDetails != "Pump Status") {
+                var templabeltext = alertDetails + "<br>" + "L: " + alertLimit;
+              } else {
+                var templabeltext = alertDetails;
+              }
+            }
+
+
+            if (alertStatus === "Nominal") {
+              var color = "green";
+            }
+            if (alertStatus === "Acknowledged" || alertStatus === "Action Taken") {
+              var color = "orange";
+            }
+            if (alertStatus === "At Risk") {
+              var color = "red";
+            }
+
+            temp.events = {
+              mouseover: function(e) {
+                this.label.element.style.display = 'block';
+              },
+              mouseout: function(e) {
+                this.label.element.style.display = 'none';
+              }
+            }
+
+            temp1.events = {
+              mouseover: function(e) {
+                this.label.element.style.display = 'block';
+              },
+              mouseout: function(e) {
+                this.label.element.style.display = 'none';
+              }
+            }
+            temp.value = alertTime,
+              temp1.value = alertTime,
+              temp.color = color,
+              temp1.color = 'transparent',
+              temp.dashStyle = 'solid',
+              temp.width = 2,
+              temp1.width = 50,
+              temp.zIndex = 5,
+              temp1.zIndex = 5,
+              temp.id = graphName,
+              temp1.id = graphName,
+              labeltext.text = templabeltext,
+              labeltext.align = 'center',
+              labeltext.rotation = -360,
+              labelStyle.fontFamily = 'GE Inspira Sans',
+              labelStyle.color = 'white',
+              labelStyle.display = 'none',
+              labelStyle.fontWeight = 100,
+              labelStyle.pointerEvents = 'none',
+              labeltext.style = labelStyle,
+              temp.label = labeltext,
+              temp1.label = labeltext,
+              tempArray.push(temp),
+              tempArray.push(temp1)
+          }
+        }
+        return tempArray;
+      },
+
+      parseModelInfoMarker: function(graphName, graphData) {
+        if (graphData && graphData.length > 0) {
+          var tempArray = [];
+          for (var i = 0; i < graphData.length; i++) {
+            var temp = {};
+            var temp1 = {};
+            var labeltext = {};
+            var labelStyle = {};
+            var training_date = graphData[i]["training_date"];
+            var mape = graphData[i]["mape"];
+            var error_bound = graphData[i]["error_bound"];
+            var timestamp = graphData[i]["timestamp"];
+
+
+            if (training_date !== null && training_date !== undefined) {
+              var templabeltext = training_date + "<br>";
+            }
+
+            if (error_bound !== null && error_bound !== undefined) {
+              templabeltext = templabeltext + "Error Bound: " + error_bound + "<br>";
+            }
+
+            if (mape !== null && mape !== undefined) {
+              templabeltext = templabeltext + "MAPE: " + mape + "%" + "<br>";
+            }
+
+
+            temp.events = {
+              mouseover: function(e) {
+                this.label.element.style.display = 'block';
+              },
+              mouseout: function(e) {
+                this.label.element.style.display = 'none';
+              }
+            }
+
+            temp1.events = {
+              mouseover: function(e) {
+                this.label.element.style.display = 'block';
+              },
+              mouseout: function(e) {
+                this.label.element.style.display = 'none';
+              }
+            }
+
+            temp.value = timestamp,
+              temp1.value = timestamp,
+              temp.color = 'blue',
+              temp1.color = 'transparent',
+              temp.dashStyle = 'solid',
+              temp.width = 2,
+              temp1.width = 50,
+              temp.zIndex = 5,
+              temp1.zIndex = 5,
+              temp.id = graphName,
+              temp1.id = graphName,
+              labeltext.text = templabeltext,
+              labeltext.align = 'center',
+              labeltext.rotation = -360,
+              labelStyle.fontFamily = 'GE Inspira Sans',
+              labelStyle.color = 'white',
+              labelStyle.display = 'none',
+              labelStyle.fontWeight = 100,
+              labelStyle.pointerEvents = 'none',
+              labeltext.style = labelStyle,
+              temp.label = labeltext,
+              temp1.label = labeltext,
+              tempArray.push(temp),
+              tempArray.push(temp1)
+          }
+        }
+        return tempArray;
+      },
+
+
+      getAlertMarker: function(tempAlert, chartName) {
+
+        this.plotlines = undefined;
+        if (this.chartid !== undefined && tempAlert !== undefined) {
+          var bht = tempAlert[0]["bht"];
+          var bsw = tempAlert[1]["bsw"];
+          var producedGas = tempAlert[2]["producedGas"];
+          var returnPressure = tempAlert[3]["returnPressure"];
+          var sagdPressure = tempAlert[4]["sagdPressure"];
+          var suddenPressure = tempAlert[5]["suddenPressure"];
+          var vapour = tempAlert[6]["vapour"];
+          var setPoints = tempAlert[7]["pumpStatus"];
+
+
+
+          var graphName = "vapour";
+          var graphData = vapour;
+          var tempArray = this.parseAlertMarker(graphName, graphData);
+          this.vapourPlotlines = tempArray;
+          if (this.vapourPlotlines !== undefined) {
+            if (this.domHost.domHost.newFromDate === undefined && this.domHost.domHost.newToDate === undefined) {
+              if (this.vapourPlotlines[0].value - this.domHost.domHost.fromMoment <= 500000000 && this.vapourPlotlines[0].value - this.domHost.domHost.fromMoment > 0) {
+                this.vapourPlotlines[0].label.align = "left";
+                this.vapourPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.toMoment - this.vapourPlotlines[0].value <= 500000000 && this.domHost.domHost.toMoment - this.vapourPlotlines[0].value > 0) {
+                this.vapourPlotlines[0].label.align = "right";
+                this.vapourPlotlines[1].label.align = "right";
+              } else {
+                this.vapourPlotlines[0].label.align = "center";
+                this.vapourPlotlines[1].label.align = "center";
+              }
+            } else {
+              if (this.vapourPlotlines[0].value - this.domHost.domHost.newFromDate <= 500000000 && this.vapourPlotlines[0].value - this.domHost.domHost.newFromDate > 0) {
+                this.vapourPlotlines[0].label.align = "left";
+                this.vapourPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.newToDate - this.vapourPlotlines[0].value <= 500000000 && this.domHost.domHost.newToDate - this.vapourPlotlines[0].value > 0) {
+                this.vapourPlotlines[0].label.align = "right";
+                this.vapourPlotlines[1].label.align = "right";
+              } else {
+                this.vapourPlotlines[0].label.align = "center";
+                this.vapourPlotlines[1].label.align = "center";
+              }
+            }
+          }
+
+
+
+
+          var graphName = "bsw";
+          var graphData = bsw;
+          var tempArray = this.parseAlertMarker(graphName, graphData);
+          this.bswPlotlines = tempArray;
+          if (this.bswPlotlines !== undefined) {
+            if (this.domHost.domHost.newFromDate === undefined && this.domHost.domHost.newToDate === undefined) {
+              if (this.bswPlotlines[0].value - this.domHost.domHost.fromMoment <= 500000000 && this.bswPlotlines[0].value - this.domHost.domHost.fromMoment > 0) {
+                this.bswPlotlines[0].label.align = "left";
+                this.bswPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.toMoment - this.bswPlotlines[0].value <= 500000000 && this.domHost.domHost.toMoment - this.bswPlotlines[0].value > 0) {
+                this.bswPlotlines[0].label.align = "right";
+                this.bswPlotlines[1].label.align = "right";
+              } else {
+                this.bswPlotlines[0].label.align = "center";
+                this.bswPlotlines[1].label.align = "center";
+              }
+            } else {
+              if (this.bswPlotlines[0].value - this.domHost.domHost.newFromDate <= 500000000 && this.bswPlotlines[0].value - this.domHost.domHost.newFromDate > 0) {
+                this.bswPlotlines[0].label.align = "left";
+                this.bswPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.newToDate - this.bswPlotlines[0].value <= 500000000 && this.domHost.domHost.newToDate - this.bswPlotlines[0].value > 0) {
+                this.bswPlotlines[0].label.align = "right";
+                this.bswPlotlines[1].label.align = "right";
+              } else {
+                this.bswPlotlines[0].label.align = "center";
+                this.bswPlotlines[1].label.align = "center";
+              }
+            }
+          }
+
+
+
+          var graphName = "producedGas";
+          var graphData = producedGas;
+          var tempArray = this.parseAlertMarker(graphName, graphData);
+          this.producedGasPlotlines = tempArray;
+          if (this.producedGasPlotlines !== undefined) {
+            if (this.domHost.domHost.newFromDate === undefined && this.domHost.domHost.newToDate === undefined) {
+              if (this.producedGasPlotlines[0].value - this.domHost.domHost.fromMoment <= 500000000 && this.producedGasPlotlines[0].value - this.domHost.domHost.fromMoment > 0) {
+                this.producedGasPlotlines[0].label.align = "left";
+                this.producedGasPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.toMoment - this.producedGasPlotlines[0].value <= 500000000 && this.domHost.domHost.toMoment - this.producedGasPlotlines[0].value > 0) {
+                this.producedGasPlotlines[0].label.align = "right";
+                this.producedGasPlotlines[1].label.align = "right";
+              } else {
+                this.producedGasPlotlines[0].label.align = "center";
+                this.producedGasPlotlines[1].label.align = "center";
+              }
+            } else {
+              if (this.producedGasPlotlines[0].value - this.domHost.domHost.newFromDate <= 500000000 && this.producedGasPlotlines[0].value - this.domHost.domHost.newFromDate > 0) {
+                this.producedGasPlotlines[0].label.align = "left";
+                this.producedGasPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.newToDate - this.producedGasPlotlines[0].value <= 500000000 && this.domHost.domHost.newToDate - this.producedGasPlotlines[0].value > 0) {
+                this.producedGasPlotlines[0].label.align = "right";
+                this.producedGasPlotlines[1].label.align = "right";
+              } else {
+                this.producedGasPlotlines[0].label.align = "center";
+                this.producedGasPlotlines[1].label.align = "center";
+              }
+            }
+          }
+
+
+
+
+
+
+          var graphName = "bht";
+          var graphData = bht;
+          var tempArray = this.parseAlertMarker(graphName, graphData);
+          this.bhtPlotlines = tempArray;
+          if (this.bhtPlotlines !== undefined) {
+            if (this.domHost.domHost.newFromDate === undefined && this.domHost.domHost.newToDate === undefined) {
+              if (this.bhtPlotlines[0].value - this.domHost.domHost.fromMoment <= 500000000 && this.bhtPlotlines[0].value - this.domHost.domHost.fromMoment > 0) {
+                this.bhtPlotlines[0].label.align = "left";
+                this.bhtPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.toMoment - this.bhtPlotlines[0].value <= 500000000 && this.domHost.domHost.toMoment - this.bhtPlotlines[0].value > 0) {
+                this.bhtPlotlines[0].label.align = "right";
+                this.bhtPlotlines[1].label.align = "right";
+              } else {
+                this.bhtPlotlines[0].label.align = "center";
+                this.bhtPlotlines[1].label.align = "center";
+              }
+            } else {
+              if (this.bhtPlotlines[0].value - this.domHost.domHost.newFromDate <= 500000000 && this.bhtPlotlines[0].value - this.domHost.domHost.newFromDate > 0) {
+                this.bhtPlotlines[0].label.align = "left";
+                this.bhtPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.newToDate - this.bhtPlotlines[0].value <= 500000000 && this.domHost.domHost.newToDate - this.bhtPlotlines[0].value > 0) {
+                this.bhtPlotlines[0].label.align = "right";
+                this.bhtPlotlines[1].label.align = "right";
+              } else {
+                this.bhtPlotlines[0].label.align = "center";
+                this.bhtPlotlines[1].label.align = "center";
+              }
+            }
+          }
+
+
+
+          var graphName = "returnPressure";
+          var graphData = returnPressure;
+          var tempArray = this.parseAlertMarker(graphName, graphData);
+          this.returnPressurePlotlines = tempArray;
+          if (this.returnPressurePlotlines !== undefined) {
+            if (this.domHost.domHost.newFromDate === undefined && this.domHost.domHost.newToDate === undefined) {
+              if (this.returnPressurePlotlines[0].value - this.domHost.domHost.fromMoment <= 500000000 && this.returnPressurePlotlines[0].value - this.domHost.domHost.fromMoment > 0) {
+                this.returnPressurePlotlines[0].label.align = "left";
+                this.returnPressurePlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.toMoment - this.returnPressurePlotlines[0].value <= 500000000 && this.domHost.domHost.toMoment - this.returnPressurePlotlines[0].value > 0) {
+                this.returnPressurePlotlines[0].label.align = "right";
+                this.returnPressurePlotlines[1].label.align = "right";
+              } else {
+                this.returnPressurePlotlines[0].label.align = "center";
+                this.returnPressurePlotlines[1].label.align = "center";
+              }
+            } else {
+              if (this.returnPressurePlotlines[0].value - this.domHost.domHost.newFromDate <= 500000000 && this.returnPressurePlotlines[0].value - this.domHost.domHost.newFromDate > 0) {
+                this.returnPressurePlotlines[0].label.align = "left";
+                this.returnPressurePlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.newToDate - this.returnPressurePlotlines[0].value <= 500000000 && this.domHost.domHost.newToDate - this.returnPressurePlotlines[0].value > 0) {
+                this.returnPressurePlotlines[0].label.align = "right";
+                this.returnPressurePlotlines[1].label.align = "right";
+              } else {
+                this.returnPressurePlotlines[0].label.align = "center";
+                this.returnPressurePlotlines[1].label.align = "center";
+              }
+            }
+          }
+
+
+
+
+          var graphName = "suddenPressure";
+          var graphData = suddenPressure;
+          var tempArray = this.parseAlertMarker(graphName, graphData);
+          this.suddenPressurePlotlines = tempArray;
+          if (this.suddenPressurePlotlines !== undefined) {
+            if (this.domHost.domHost.newFromDate === undefined && this.domHost.domHost.newToDate === undefined) {
+              if (this.suddenPressurePlotlines[0].value - this.domHost.domHost.fromMoment <= 500000000 && this.suddenPressurePlotlines[0].value - this.domHost.domHost.fromMoment > 0) {
+                this.suddenPressurePlotlines[0].label.align = "left";
+                this.suddenPressurePlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.toMoment - this.suddenPressurePlotlines[0].value <= 500000000 && this.domHost.domHost.toMoment - this.suddenPressurePlotlines[0].value > 0) {
+                this.suddenPressurePlotlines[0].label.align = "right";
+                this.suddenPressurePlotlines[1].label.align = "right";
+              } else {
+                this.suddenPressurePlotlines[0].label.align = "center";
+                this.suddenPressurePlotlines[1].label.align = "center";
+              }
+            } else {
+              if (this.suddenPressurePlotlines[0].value - this.domHost.domHost.newFromDate <= 500000000 && this.suddenPressurePlotlines[0].value - this.domHost.domHost.newFromDate > 0) {
+                this.suddenPressurePlotlines[0].label.align = "left";
+                this.suddenPressurePlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.newToDate - this.suddenPressurePlotlines[0].value <= 500000000 && this.domHost.domHost.newToDate - this.suddenPressurePlotlines[0].value > 0) {
+                this.suddenPressurePlotlines[0].label.align = "right";
+                this.suddenPressurePlotlines[1].label.align = "right";
+              } else {
+                this.suddenPressurePlotlines[0].label.align = "center";
+                this.suddenPressurePlotlines[1].label.align = "center";
+              }
+            }
+          }
+
+
+
+          var graphName = "sagdPressure";
+          var graphData = sagdPressure;
+          var tempArray = this.parseAlertMarker(graphName, graphData);
+          this.sagdPressurePlotlines = tempArray;
+          if (this.sagdPressurePlotlines !== undefined) {
+            if (this.domHost.domHost.newFromDate === undefined && this.domHost.domHost.newToDate === undefined) {
+              if (this.sagdPressurePlotlines[0].value - this.domHost.domHost.fromMoment <= 500000000 && this.sagdPressurePlotlines[0].value - this.domHost.domHost.fromMoment > 0) {
+                this.sagdPressurePlotlines[0].label.align = "left";
+                this.sagdPressurePlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.toMoment - this.sagdPressurePlotlines[0].value <= 500000000 && this.domHost.domHost.toMoment - this.sagdPressurePlotlines[0].value > 0) {
+                this.sagdPressurePlotlines[0].label.align = "right";
+                this.sagdPressurePlotlines[1].label.align = "right";
+              } else {
+                this.sagdPressurePlotlines[0].label.align = "center";
+                this.sagdPressurePlotlines[1].label.align = "center";
+              }
+            } else {
+              if (this.sagdPressurePlotlines[0].value - this.domHost.domHost.newFromDate <= 500000000 && this.sagdPressurePlotlines[0].value - this.domHost.domHost.newFromDate > 0) {
+                this.sagdPressurePlotlines[0].label.align = "left";
+                this.sagdPressurePlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.newToDate - this.sagdPressurePlotlines[0].value <= 500000000 && this.domHost.domHost.newToDate - this.sagdPressurePlotlines[0].value > 0) {
+                this.sagdPressurePlotlines[0].label.align = "right";
+                this.sagdPressurePlotlines[1].label.align = "right";
+              } else {
+                this.sagdPressurePlotlines[0].label.align = "center";
+                this.sagdPressurePlotlines[1].label.align = "center";
+              }
+
+            }
+          }
+
+
+
+
+          var graphName = "setPoints";
+          var graphData = setPoints;
+          var tempArray = this.parseAlertMarker(graphName, graphData);
+          this.setPointsPlotlines = tempArray;
+          if (this.setPointsPlotlines !== undefined) {
+            if (this.domHost.domHost.newFromDate === undefined && this.domHost.domHost.newToDate === undefined) {
+              if (this.setPointsPlotlines[0].value - this.domHost.domHost.fromMoment <= 500000000 && this.setPointsPlotlines[0].value - this.domHost.domHost.fromMoment > 0) {
+                this.setPointsPlotlines[0].label.align = "left";
+                this.setPointsPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.toMoment - this.setPointsPlotlines[0].value <= 500000000 && this.domHost.domHost.toMoment - this.setPointsPlotlines[0].value > 0) {
+                this.setPointsPlotlines[0].label.align = "right";
+                this.setPointsPlotlines[1].label.align = "right";
+              } else {
+                this.setPointsPlotlines[0].label.align = "center";
+                this.setPointsPlotlines[1].label.align = "center";
+              }
+            } else {
+              if (this.setPointsPlotlines[0].value - this.domHost.domHost.newFromDate <= 500000000 && this.setPointsPlotlines[0].value - this.domHost.domHost.newFromDate > 0) {
+                this.setPointsPlotlines[0].label.align = "left";
+                this.setPointsPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.newToDate - this.setPointsPlotlines[0].value <= 500000000 && this.domHost.domHost.newToDate - this.setPointsPlotlines[0].value > 0) {
+                this.setPointsPlotlines[0].label.align = "right";
+                this.setPointsPlotlines[1].label.align = "right";
+              } else {
+                this.setPointsPlotlines[0].label.align = "center";
+                this.setPointsPlotlines[1].label.align = "center";
+              }
+
+            }
+
+          }
+
+
+
+          if (chartName === "chart1") {
+            this.plotlines = [];
+          }
+          if (this.chartid === "chart2") {
+            this.plotlines = this.vapourPlotlines;
+          }
+          if (this.chartid === "chart3") {
+            this.plotlines = this.producedGasPlotlines;
+          }
+          if (this.chartid === "chart4") {
+            this.plotlines = this.bswPlotlines;
+          }
+          if (this.chartid === "chart5") {
+            this.plotlines = this.bhtPlotlines;
+          }
+          if (this.chartid === "chart6") {
+            this.plotlines = this.returnPressurePlotlines;
+          }
+          if (this.chartid === "chart7") {
+            this.plotlines = this.suddenPressurePlotlines;
+          }
+          if (this.chartid === "chart8") {
+            this.plotlines = this.sagdPressurePlotlines;
+          }
+          if (this.chartid === "chart9") {
+            this.plotlines = this.setPointsPlotlines;
+          }
+
+          if (this.chartid === "detailedChart") {
+            if (chartName != undefined) {
+              if (chartName === "chart1") {
+                this.plotlines = [];
+              }
+              if (chartName === "chart2") {
+                this.plotlines = this.vapourPlotlines;
+              }
+              if (chartName === "chart3") {
+                this.plotlines = this.producedGasPlotlines;
+              }
+              if (chartName === "chart4") {
+                this.plotlines = this.bswPlotlines;
+              }
+              if (chartName === "chart5") {
+                this.plotlines = this.bhtPlotlines;
+              }
+              if (chartName === "chart6") {
+                this.plotlines = this.returnPressurePlotlines;
+              }
+              if (chartName === "chart7") {
+                this.plotlines = this.suddenPressurePlotlines;
+              }
+              if (chartName === "chart8") {
+                this.plotlines = this.sagdPressurePlotlines;
+              }
+              if (chartName === "chart9") {
+                this.plotlines = this.setPointsPlotlines;
+              }
+            }
+          }
+        }
+
+      },
+
+
+      getModelInfoMarker: function(tempModelInfo, chartName) {
+
+
+        this.modelInfoPlotlines = undefined;
+
+        if (this.chartid !== undefined && tempModelInfo !== undefined) {
+
+          var producedGas = tempModelInfo[2]["producedGasModelInfo"];
+          var vapour = tempModelInfo[6]["vapourModelInfo"];
+          var emulsion = tempModelInfo[8]["emulsionModelInfo"];
+
+          var graphName = "vapourModelInfo";
+          var graphData = vapour;
+          var tempArray = this.parseModelInfoMarker(graphName, graphData);
+          this.modelInfoVapourPlotlines = tempArray;
+          if (this.modelInfoVapourPlotlines !== undefined) {
+            if (this.domHost.domHost.newFromDate === undefined && this.domHost.domHost.newToDate === undefined) {
+              if (this.modelInfoVapourPlotlines[0].value - this.domHost.domHost.fromMoment <= 500000000 && this.modelInfoVapourPlotlines[0].value - this.domHost.domHost.fromMoment > 0) {
+                this.modelInfoVapourPlotlines[0].label.align = "left";
+                this.modelInfoVapourPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.toMoment - this.modelInfoVapourPlotlines[0].value <= 500000000 && this.domHost.domHost.toMoment - this.modelInfoVapourPlotlines[0].value > 0) {
+                this.modelInfoVapourPlotlines[0].label.align = "right";
+                this.modelInfoVapourPlotlines[1].label.align = "right";
+              } else {
+                this.modelInfoVapourPlotlines[0].label.align = "center";
+                this.modelInfoVapourPlotlines[1].label.align = "center";
+              }
+            } else {
+              if (this.modelInfoVapourPlotlines[0].value - this.domHost.domHost.newFromDate <= 500000000 && this.modelInfoVapourPlotlines[0].value - this.domHost.domHost.newFromDate > 0) {
+                this.modelInfoVapourPlotlines[0].label.align = "left";
+                this.modelInfoVapourPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.newToDate - this.modelInfoVapourPlotlines[0].value <= 500000000 && this.domHost.domHost.newToDate - this.modelInfoVapourPlotlines[0].value > 0) {
+                this.modelInfoVapourPlotlines[0].label.align = "right";
+                this.modelInfoVapourPlotlines[1].label.align = "right";
+              } else {
+                this.modelInfoVapourPlotlines[0].label.align = "center";
+                this.modelInfoVapourPlotlines[1].label.align = "center";
+              }
+            }
+          }
+
+
+          var graphName = "emulsionModelInfo";
+          var graphData = emulsion;
+          var tempArray = this.parseModelInfoMarker(graphName, graphData);
+          this.modelInfoEmulsionPlotlines = tempArray;
+          if (this.modelInfoEmulsionPlotlines !== undefined) {
+            if (this.domHost.domHost.newFromDate === undefined && this.domHost.domHost.newToDate === undefined) {
+              if (this.modelInfoEmulsionPlotlines[0].value - this.domHost.domHost.fromMoment <= 500000000 && this.modelInfoEmulsionPlotlines[0].value - this.domHost.domHost.fromMoment > 0) {
+                this.modelInfoEmulsionPlotlines[0].label.align = "left";
+                this.modelInfoEmulsionPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.toMoment - this.modelInfoEmulsionPlotlines[0].value <= 500000000 && this.domHost.domHost.toMoment - this.modelInfoEmulsionPlotlines[0].value > 0) {
+                this.modelInfoEmulsionPlotlines[0].label.align = "right";
+                this.modelInfoEmulsionPlotlines[1].label.align = "right";
+              } else {
+                this.modelInfoEmulsionPlotlines[0].label.align = "center";
+                this.modelInfoEmulsionPlotlines[1].label.align = "center";
+              }
+            } else {
+              if (this.modelInfoEmulsionPlotlines[0].value - this.domHost.domHost.newFromDate <= 500000000 && this.modelInfoEmulsionPlotlines[0].value - this.domHost.domHost.newFromDate > 0) {
+                this.modelInfoEmulsionPlotlines[0].label.align = "left";
+                this.modelInfoEmulsionPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.newToDate - this.modelInfoEmulsionPlotlines[0].value <= 500000000 && this.domHost.domHost.newToDate - this.modelInfoEmulsionPlotlines[0].value > 0) {
+                this.modelInfoEmulsionPlotlines[0].label.align = "right";
+                this.modelInfoEmulsionPlotlines[1].label.align = "right";
+              } else {
+                this.modelInfoEmulsionPlotlines[0].label.align = "center";
+                this.modelInfoEmulsionPlotlines[1].label.align = "center";
+              }
+            }
+          }
+
+
+
+          graphName = "producedGasModelInfo";
+          graphData = producedGas;
+          tempArray = this.parseModelInfoMarker(graphName, graphData);
+          this.modelInfoProducedGasPlotlines = tempArray;
+          if (this.modelInfoProducedGasPlotlines !== undefined) {
+            if (this.domHost.domHost.newFromDate === undefined && this.domHost.domHost.newToDate === undefined) {
+              if (this.modelInfoProducedGasPlotlines[0].value - this.domHost.domHost.fromMoment <= 500000000 && this.modelInfoProducedGasPlotlines[0].value - this.domHost.domHost.fromMoment > 0) {
+                this.modelInfoProducedGasPlotlines[0].label.align = "left";
+                this.modelInfoProducedGasPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.toMoment - this.modelInfoProducedGasPlotlines[0].value <= 500000000 && this.domHost.domHost.toMoment - this.modelInfoProducedGasPlotlines[0].value > 0) {
+                this.modelInfoProducedGasPlotlines[0].label.align = "right";
+                this.modelInfoProducedGasPlotlines[1].label.align = "right";
+              } else {
+                this.modelInfoProducedGasPlotlines[0].label.align = "center";
+                this.modelInfoProducedGasPlotlines[1].label.align = "center";
+              }
+            } else {
+              if (this.modelInfoProducedGasPlotlines[0].value - this.domHost.domHost.newFromDate <= 500000000 && this.modelInfoProducedGasPlotlines[0].value - this.domHost.domHost.newFromDate > 0) {
+                this.modelInfoProducedGasPlotlines[0].label.align = "left";
+                this.modelInfoProducedGasPlotlines[1].label.align = "left";
+              } else if (this.domHost.domHost.newToDate - this.modelInfoProducedGasPlotlines[0].value <= 500000000 && this.domHost.domHost.newToDate - this.modelInfoProducedGasPlotlines[0].value > 0) {
+                this.modelInfoProducedGasPlotlines[0].label.align = "right";
+                this.modelInfoProducedGasPlotlines[1].label.align = "right";
+              } else {
+                this.modelInfoProducedGasPlotlines[0].label.align = "center";
+                this.modelInfoProducedGasPlotlines[1].label.align = "center";
+              }
+            }
+          }
+
+
+        }
+
+        if (this.chartid === "chart1") {
+          this.modelInfoPlotlines = this.modelInfoEmulsionPlotlines;
+        }
+        if (this.chartid === "chart2") {
+          this.modelInfoPlotlines = this.modelInfoVapourPlotlines;
+        }
+        if (this.chartid === "chart3") {
+          this.modelInfoPlotlines = this.modelInfoProducedGasPlotlines;
+        }
+
+        if (this.chartid === "detailedChart") {
+          if (chartName != undefined) {
+            if (chartName === "chart1") {
+              this.modelInfoPlotlines = this.modelInfoEmulsionPlotlines;
+            }
+            if (chartName === "chart2") {
+              this.modelInfoPlotlines = this.modelInfoVapourPlotlines;
+            }
+            if (chartName === "chart3") {
+              this.modelInfoPlotlines = this.modelInfoProducedGasPlotlines;
+            }
+
+          }
+        }
+
+        if (this.plotlines !== undefined) {
+          if (this.modelInfoPlotlines !== undefined) {
+            for (var i = 0; i < this.modelInfoPlotlines.length; i++) {
+              this.plotlines.push(this.modelInfoPlotlines[i]);
+            }
+
+
+          }
+        } else {
+          if (this.modelInfoPlotlines !== undefined) {
+            this.plotlines = this.modelInfoPlotlines;
+          }
+        }
+
+      },
+
+      requestData: function(e) {
+
+        const resp = e.detail.response;
+        var newData = resp;
+        if (this.chartid === 'chart1') {
+          var emulsion = newData.Emulsion;
+          for (var a = 0; a < emulsion.length; a++) {
+            emulsion[a].data.forEach(dt => {
+              var series = this.chart.series[a];
+
+              //shift=series.data.length>100;
+              if (series !== undefined)
+                this.chart.series[a].addPoint(dt, false, true);
+            })
+          }
+          this.chart.redraw();
+        }
+        if (this.chartid === 'chart2') {
+          var vapour = newData.Vapour;
+          for (var b = 0; b < vapour.length; b++) {
+            vapour[b].data.forEach(dt => {
+              var series = this.chart.series[b];
+              //  shift=series.data.length>100;
+              if (series !== undefined)
+                this.chart.series[b].addPoint(dt, false, true);
+            })
+          }
+          this.chart.redraw();
+        }
+        if (this.chartid === 'chart3') {
+          var producedGas = newData.Produced_Gas;
+          for (var c = 0; c < producedGas.length; c++) {
+            producedGas[c].data.forEach(dt => {
+              var series = this.chart.series[c];
+              //shift=series.data.length>100;
+              if (series !== undefined)
+                this.chart.series[c].addPoint(dt, false, true);
+            })
+          }
+
+          this.chart.redraw();
+        }
+        if (this.chartid === 'chart4') {
+          var bsw = newData.BSW;
+          for (var d = 0; d < bsw.length; d++) {
+            bsw[d].data.forEach(dt => {
+              var series = this.chart.series[d];
+              //shift=series.data.length>100;
+              if (series !== undefined)
+                this.chart.series[d].addPoint(dt, false, true);
+            })
+          }
+
+          this.chart.redraw();
+        }
+        if (this.chartid === 'chart5') {
+          var bht = newData.BHT;
+          for (var e = 0; e < bht.length; e++) {
+            bht[e].data.forEach(dt => {
+              var series = this.chart.series[e];
+              //shift=series.data.length>100;
+              if (series !== undefined)
+                this.chart.series[e].addPoint(dt, false, true);
+            })
+          }
+
+          this.chart.redraw();
+        }
+        if (this.chartid === 'chart6') {
+          var returnPressure = newData.Return_Pressure;
+          for (var f = 0; f < returnPressure.length; f++) {
+            returnPressure[f].data.forEach(dt => {
+              var series = this.chart.series[f];
+              //shift=series.data.length>100;
+              if (series !== undefined)
+                this.chart.series[f].addPoint(dt, false, true);
+            })
+          }
+
+          this.chart.redraw();
+        }
+        if (this.chartid === 'chart7') {
+
+          var suddenPressure = newData.Sudden_Pressure;
+          for (var g = 0; g < suddenPressure.length; g++) {
+            suddenPressure[g].data.forEach(dt => {
+              var series = this.chart.series[g];
+              //shift=series.data.length>100;
+              if (series !== undefined)
+                this.chart.series[g].addPoint(dt, false, true);
+            })
+          }
+
+          this.chart.redraw();
+        }
+        if (this.chartid === 'chart8') {
+          var sagdPressure = newData.SAGD_Pressure;
+          for (var h = 0; h < sagdPressure.length; h++) {
+            sagdPressure[h].data.forEach(dt => {
+              var series = this.chart.series[h];
+              //  shift=series.data.length>100;
+              if (series !== undefined)
+                this.chart.series[h].addPoint(dt, false, true);
+            })
+          }
+
+          this.chart.redraw();
+        }
+        if (this.chartid === 'chart9') {
+          var setPoints = newData.Setpoints;
+          for (var i = 0; i < setPoints.length; i++) {
+            setPoints[i].data.forEach(dt => {
+              var series = this.chart.series[i];
+              //shift=series.data.length>100;
+              if (series !== undefined)
+                this.chart.series[i].addPoint(dt, false, true);
+            })
+          }
+
+          this.chart.redraw();
+        }
+      },
+      filterChartSync: function(fromDate, toDate, source) {
+        this.minXaxis = fromDate
+        this.maxXaxis = toDate
+        this.configureYAxis();
+        this.configureThemes();
+        this.configureChart();
+      },
+      filterChart: function() {
+
+        this.minXaxis = undefined
+        this.maxXaxis = undefined
+        this.configureYAxis();
+        this.configureThemes();
+        this.configureChart();
+      },
+      filterChartwithNotShared: function(fromDate, toDate) {
+        this.xAxis["min"] = fromDate;
+        this.xAxis["max"] = toDate;
+        this.configureYAxis();
+        this.configureThemes();
+
+        this.chartWithoutShared();
+      },
+      filterChartNoTooltip: function(fromDate, toDate) {
+        this.xAxis["min"] = fromDate;
+        this.xAxis["max"] = toDate;
+        this.configureYAxis();
+        this.configureThemes();
+
+        this.configureChartWithoutTooltipALL();
+      },
+      toolTipdisableAll: function(checked) {
+        if (!checked) {
+          this.configureYAxis();
+          this.configureThemes();
+          this.configureChartWithoutTooltipALL();
+        } else {
+          this.configureYAxis();
+          this.configureThemes();
+          this.configureChart();
+        }
+      },
+      configureYAxis: function() {
+        this.yAxis = [];
+
+        if (this.timeseriesSettings) {
+          for (var i = 0; i < this.timeseriesSettings.length; i++) {
+            var axis = {
+              title: {
+                text: this.timeseriesSettings[i]["description"],
+                enabled: false
+              },
+              labels: {
+                formatter: function() {
+                  return this.value;
+                },
+                style: {
+                  color: this.selectedColor
+                }
+              },
+              minorGridLineWidth: 0.5,
+              gridLineWidth: 1,
+              // ceiling: this.timeseriesSettings[i]["maximum"],
+              // floor: this.timeseriesSettings[i]["minimum"],
+              startOnTick: true,
+              endOnTick: true,
+              max: this.timeseriesSettings[i]["maximum"],
+              min: this.timeseriesSettings[i]["minimum"],
+              visible: this.timeseriesSettings[i]["selected"],
+              tickAmount: 8
+            }
+            this.yAxis.push(axis);
+          }
+        } else {
+          this.yAxis = {
+            minorGridLineWidth: 0.5,
+            gridLineWidth: 1,
+            alternateGridColor: null,
+          }
+        }
+      },
+
+      timeseriesSettingsChanged: function() {
+        if (this.chartid) {
+          this.configureYAxis();
+          this.configureThemes();
+          this.configureChart();
+        }
+      },
+      sharedTooltipDisable: function(event) {
+
+        this.configureYAxis();
+        this.configureThemes();
+        this.chartWithoutShared();
+      },
+
+      getStandardDeviation: function(numbersArr) {
+        //--CALCULATE AVAREGE--
+        var total = 0;
+        for (var key in numbersArr)
+          total += numbersArr[key];
+        var meanVal = total / numbersArr.length;
+        //--CALCULATE AVAREGE--
+
+        //--CALCULATE STANDARD DEVIATION--
+        var SDprep = 0;
+        for (var key in numbersArr)
+          SDprep += Math.pow((parseFloat(numbersArr[key]) - meanVal), 2);
+        var SDresult = Math.sqrt(SDprep / numbersArr.length);
+        //--CALCULATE STANDARD DEVIATION--
+        return SDresult;
+
+      },
+
+      computeAvg: function(currentseries, min, max) {
+        var sum = 0,
+          count = 0;
+        Highcharts.each(currentseries.data, function(point, j) {
+          if (point.x >= min && point.x <= max) {
+            sum += point.y;
+            count++;
+          }
+        });
+        return (sum / count);
+
+      },
+
+
+      calculateChartStatistics: function(chart) {
+        this.graphStatSettings = [];
+        for (i = 0; i < this.timeseriesSettings.length; i++) {
+          var temp = {};
+          temp.tagname = this.timeseriesSettings[i].tagname;
+          temp.color = this.timeseriesSettings[i].color;
+          temp.description = this.timeseriesSettings[i].description;
+          temp.value = this.timeseriesSettings[i].value;
+          this.graphStatSettings.push(temp);
+        }
+
+        var xAxis = chart.xAxis[0],
+          extremes = xAxis.getExtremes(),
+          min = extremes.min,
+          max = extremes.max,
+          yValues = [],
+          count = 0;
+        for (var i = 0; i < chart.series.length; i++) {
+          yValues = [];
+          count = 0;
+          if (chart.series[i].data.length != 0) {
+            this.graphStatSettings[i].average = this.computeAvg(chart.series[i], min, max).toFixed(1);
+            Highcharts.each(chart.series[i].data, function(point, j) {
+              if (point.x >= min && point.x <= max) {
+                yValues.push(point.y);
+                count++;
+              }
+            });
+            this.graphStatSettings[i].deviation = this.getStandardDeviation(yValues).toFixed(1);
+            this.graphStatSettings[i].count = count;
+            yValues = yValues.sort(function(a, b) {
+              return a - b;
+            });
+            this.graphStatSettings[i].minimum = yValues[0].toFixed(1);
+            this.graphStatSettings[i].maximum = yValues[count - 1].toFixed(1);
+          } else {
+            this.graphStatSettings[i].deviation = "";
+            this.graphStatSettings[i].count = "";
+            this.graphStatSettings[i].minimum = "";
+            this.graphStatSettings[i].maximum = "";
+            this.graphStatSettings[i].average = "";
+          }
+        }
+
+      },
+
+
+
+      trendClicked: function(trendID) {
+        for (var i = 0; i < this.timeseriesSettings.length; i++) {
+          if (this.timeseriesSettings[i]["tagname"] == trendID.replace(/ /g, "")) {
+            this.selectedColor = this.timeseriesSettings[i]["color"];
+            this.timeseriesSettings[i]["selected"] = true;
+          } else {
+            this.timeseriesSettings[i]["selected"] = false;
+          }
+        }
+
+        // this.timeseriesSettingsChanged();
+      },
+
+      configureThemes: function() {
+        var colors = [];
+        if (this.timeseriesSettings) {
+          for (var i = 0; i < this.timeseriesSettings.length; i++) {
+            colors.push(this.timeseriesSettings[i]["color"]);
+          }
+        } else {
+          colors = ['#2b908f', '#90ee7e', '#f45b5b', '#7798BF', '#aaeeee', '#ff0066',
+            '#eeaaee', '#55BF3B', '#DF5353', '#7798BF', '#aaeeee'
+          ];
+        }
+
+        Highcharts.createElement('link', {
+          href: 'https://fonts.googleapis.com/css?family=Unica+One',
+          rel: 'stylesheet',
+          type: 'text/css'
+        }, null, document.getElementsByTagName('head')[0]);
+
+        Highcharts.theme = {
+          lang: {
+            thousandsSep: ''
+          },
+          colors: colors,
+          chart: {
+            backgroundColor: {
+              linearGradient: {
+                x1: 0,
+                y1: 0,
+                x2: 1,
+                y2: 1
+              },
+              stops: [
+                [0, '#202327'],
+                [1, '#202327']
+              ]
+            },
+            style: {
+              fontFamily: '\'Unica One\', sans-serif'
+            },
+            plotBorderColor: '#606063',
+            zoomType: 'x'
+          },
+          title: {
+            style: {
+              color: 'black',
+              textTransform: 'uppercase',
+              fontSize: '1px'
+            }
+          },
+          subtitle: {
+            style: {
+              color: '#fff',
+              textTransform: 'uppercase'
+            }
+          },
+          xAxis: {
+            gridLineColor: '#535c68',
+            labels: {
+              style: {
+                color: '#c9c9cc'
+              }
+            },
+            lineColor: '#707073',
+            minorGridLineColor: '#505053',
+            tickColor: '#707073',
+            title: {
+              style: {
+                color: '#fff'
+
+              }
+            }
+          },
+          yAxis: {
+            gridLineColor: '#535c68',
+            labels: {
+              style: {
+                color: '#fff'
+              }
+            },
+            lineColor: '#707073',
+            minorGridLineColor: '#505053',
+            tickColor: '#707073',
+            tickWidth: 1,
+            title: {
+              style: {
+                color: '#fff'
+              }
+            }
+          },
+          tooltip: {
+            backgroundColor: '#000000', //'rgba(0, 0, 0, 0.85)',
+            style: {
+              color: '#c9c9cc',
+              fontFamily: 'Arial'
+            }
+          },
+          plotOptions: {
+            series: {
+              dataLabels: {
+                color: '#B0B0B3'
+              },
+              marker: {
+                lineColor: '#333'
+              }
+            },
+            boxplot: {
+              fillColor: '#505053'
+            },
+            candlestick: {
+              lineColor: 'white'
+            },
+            errorbar: {
+              color: 'white'
+            }
+          },
+          legend: {
+            itemStyle: {
+              color: '#c9c9cc',
+              fontFamily: 'Arial',
+              fontSize: '11px'
+            },
+            itemHoverStyle: {
+              color: '#FFF'
+            },
+            itemHiddenStyle: {
+              color: '#606063'
+            }
+          },
+          credits: {
+            style: {
+              color: '#666'
+            }
+          },
+          labels: {
+            style: {
+              color: '#707073'
+            }
+          },
+
+          drilldown: {
+            activeAxisLabelStyle: {
+              color: '#F0F0F3'
+            },
+            activeDataLabelStyle: {
+              color: '#F0F0F3'
+            }
+          },
+
+          navigation: {
+            buttonOptions: {
+              symbolStroke: '#DDDDDD',
+              theme: {
+                fill: '#505053'
+              }
+            }
+          },
+
+          // scroll charts
+          rangeSelector: {
+            buttonTheme: {
+              fill: '#505053',
+              stroke: '#202327',
+              style: {
+                color: '#CCC'
+              },
+              states: {
+                hover: {
+                  fill: '#707073',
+                  stroke: '#202327',
+                  style: {
+                    color: 'white'
+                  }
+                },
+                select: {
+                  fill: '#000003',
+                  stroke: '#202327',
+                  style: {
+                    color: 'white'
+                  }
+                }
+              }
+            },
+            inputBoxBorderColor: '#505053',
+            inputStyle: {
+              backgroundColor: '#333',
+              color: 'silver'
+            },
+            labelStyle: {
+              color: 'silver'
+            }
+          },
+
+          navigator: {
+            handles: {
+              backgroundColor: '#666',
+              borderColor: '#AAA'
+            },
+            outlineColor: '#CCC',
+            maskFill: 'rgba(255,255,255,0.1)',
+            series: {
+              color: '#7798BF',
+              lineColor: '#A6C7ED'
+            },
+            xAxis: {
+              gridLineColor: '#505053'
+            }
+          },
+
+          scrollbar: {
+            barBackgroundColor: '#808083',
+            barBorderColor: '#808083',
+            buttonArrowColor: '#CCC',
+            buttonBackgroundColor: '#606063',
+            buttonBorderColor: '#606063',
+            rifleColor: '#FFF',
+            trackBackgroundColor: '#404043',
+            trackBorderColor: '#404043'
+          },
+
+          // special colors for some of the
+          legendBackgroundColor: 'rgba(0, 0, 0, 0.5)',
+          background2: '#505053',
+          dataLabelsColor: '#B0B0B3',
+          textColor: '#C0C0C0',
+          contrastTextColor: '#F0F0F3',
+          maskColor: 'rgba(255,255,255,0.3)'
+        };
+
+        // Apply the theme
+        Highcharts.setOptions(Highcharts.theme);
+      },
+
+      configureChart: function() {
+        var each = Highcharts.each,
+          find = Highcharts.find,
+          updateFlag = true;
+
+        var H = Highcharts,
+          PICK = H.pick,
+          FIREEVENT = H.fireEvent,
+          DEFINED = H.defined,
+          COLOR = H.color;
+        var currentElement = this.chartid;
+        if (this.chartid === "detailedChart") {
+          var currentElement = this.domHost.currentChart
+          var graphItem = {
+            "chart1": 'Emulsion',
+            "chart2": 'Vapour',
+            "chart3": 'Produced Gas',
+            "chart4": 'BSW',
+            "chart5": 'BHT',
+            "chart6": 'Return Pressure',
+            "chart7": 'Sudden Pressure',
+            "chart8": 'SAGD Pressure',
+            "chart9": "Setpoints"
+          };
+          var filename = this.domHost.domHost.domHost.wellId + '_' + graphItem[currentElement];
+        } else {
+          if (this.chartid === "detailedVMFelistChart") {
+            var filename = this.domHost.domHost.domHost.wellId + '_' + "Feature List";
+          } else {
+            var graphItem = {
+              "chart1": 'Emulsion',
+              "chart2": 'Vapour',
+              "chart3": 'Produced Gas',
+              "chart4": 'BSW',
+              "chart5": 'BHT',
+              "chart6": 'Return Pressure',
+              "chart7": 'Sudden Pressure',
+              "chart8": 'SAGD Pressure',
+              "chart9": "Setpoints"
+            };
+            var filename = this.domHost.domHost.wellId + '_' + graphItem[currentElement];
+          }
+        }
+
+        /**
+         * Use last available event when updating non-snapped crosshairs without
+         * mouse interaction (#5287)
+         * */
+
+        Highcharts.Pointer.prototype.reset = function() {
+          return undefined;
+        };
+
+        /**
+         * Highlight a point by showing tooltip, setting hover state and draw crosshair
+         * */
+        Highcharts.Point.prototype.highlight = function(event) {
+          event = this.series.chart.pointer.normalize(event);
+          this.onMouseOver(); // Show the hover marker
+          // commented the below line due to cause null pointer execption on UI
+          //this.series.chart.tooltip.refresh(this); // Show the tooltip
+          this.series.chart.xAxis[0].drawCrosshair(event, this); // Show the crosshair
+        };
+
+        function getVisiblePoint(points, onlyShowVisible) {
+          var items = {};
+          if (onlyShowVisible) {
+            points.forEach(function(p) {
+              if (p.series.visible) {
+                items[p.series.name] = p.y;
+                p.series.setState('hover');
+              }
+            });
+          } else {
+            points.forEach(function(p) {
+              items[p.series.name] = p.y;
+            });
+          }
+          return items;
+        }
+
+        function getVisibleSeries(series, onlyShowVisible) {
+          var items = [];
+          if (onlyShowVisible) {
+            series.forEach(function(s) {
+              if (s.visible) {
+                items.push(s);
+              }
+            });
+          } else {
+            items = series;
+          }
+          return items;
+        }
+
+        function syncExtremes(e) {
+          var thisChart = this.chart;
+
+          if (e.trigger !== 'syncExtremes') { // Prevent feedback loop
+            H.each(H.charts, function(chart) {
+              if (chart !== thisChart) {
+                if (chart.xAxis[0].setExtremes) { // It is null while updating
+                  chart.xAxis[0].setExtremes(
+                    e.min,
+                    e.max,
+                    undefined,
+                    false, {
+                      trigger: 'syncExtremes'
+                    }
+                  );
+                }
+              }
+            });
+          }
+        }
+
+        function interpolateSeries(xVal, series) {
+          var numPoints = series.points.length;
+          var i = numPoints;
+          var pointLess;
+          var pointMore;
+          var interpolated = true;
+          var yVal;
+
+          if (interpolated) {
+            // We need to interpolate. Find a point with smaller and one with greater X value.
+            while (i--) {
+              if (!series.points[i].isNull && series.points[i].x < xVal) {
+                pointLess = series.points[i];
+                break;
+              }
+            }
+            for (i = 0; i < numPoints; ++i) {
+              if (!series.points[i].isNull && series.points[i].x > xVal) {
+                pointMore = series.points[i];
+                break;
+              }
+            }
+
+            if (!pointLess || !pointMore) {
+              // For ends, don't interpolate
+              yVal = "-";
+            } else {
+              yVal = pointLess.y + (pointMore.y - pointLess.y) / (pointMore.x - pointLess.x) * (xVal - pointLess.x);
+            }
+          }
+
+          return (yVal === '-' ? 'null' : yVal) + ' (int)';
+        }
+
+        function getTnterpolatedValue(xVal, points, onlyShowVisible, skipFirstDummySeries) {
+          var series = points[0].series.chart.series;
+          series = skipFirstDummySeries ? series.slice(1) : series;
+          var _series = getVisibleSeries(series, onlyShowVisible);
+          var _points = getVisiblePoint((skipFirstDummySeries ? points.slice(1) : points), onlyShowVisible);
+
+          var hasDataSeriesNames = {};
+          var hasNoDataSeries = [];
+          points.forEach(function(p) {
+            if (p.series.visible) {
+              hasDataSeriesNames[p.series.name] = p.y;
+            }
+          });
+
+          _series.forEach(function(s) {
+            if (!_points.hasOwnProperty(s.name)) {
+              _points[s.name] = interpolateSeries(xVal, s);
+            }
+          });
+          var items = [];
+          _series.forEach(function(s) {
+            if (_points.hasOwnProperty(s.name)) {
+              items.push({
+                name: s.name,
+                value: _points[s.name]
+              })
+            }
+          });
+          return items;
+        };
+
+        function buildTimeLineFromSeries(arrayOfSeriesData, defaultValue) {
+          var xVal = defaultValue || 0;
+          var tracker = {};
+          arrayOfSeriesData.forEach(function(s) {
+            s.forEach(function(p) {
+              tracker[p[0]] = p[0];
+            });
+          });
+
+          var newTimeline = [];
+          Object.keys(tracker).sort().forEach(function(t, i) {
+            newTimeline.push([tracker[t], xVal]);
+          });
+          return newTimeline;
+        };
+
+        var generateDummyData = ({
+                                   min,
+                                   max,
+                                   interval
+                                 }) => {
+          var {
+            time: minTime,
+            value: minValue
+          } = min;
+          var {
+            time: maxTime,
+            value: maxValue
+          } = max;
+          var valueInterval = (maxValue - minValue) / interval;
+          var timeInterval = (maxTime - minTime) / interval;
+          var data = [];
+          for (var iTime = minTime, iValue = minValue; iTime < maxTime; iTime += timeInterval, iValue += valueInterval) {
+            data.push([iTime, parseInt(iValue * 100) / 100]);
+          }
+          return data;
+        };
+
+        var buildSeries = (items) => {
+          var _items = items.slice(0, items.length);
+          _items.unshift({
+            name: 'dummy',
+            dashStyle: 'solid',
+            lineWidth: 1,
+            data: []
+          });
+          var base = [];
+          var datas = [];
+          items.forEach(function(s, i) {
+            var {
+              data_min,
+              data_max
+            } = s;
+            datas.push(generateDummyData({
+              min: {
+                time: data_min,
+                value: (i + 1) * 5
+              },
+              max: {
+                time: data_max,
+                value: (i + 1) * 12
+              },
+              interval: (i % 2 === 0) ? 10 : 15
+            }));
+          });
+          base.push({
+            name: 'dummy',
+            dashStyle: 'solid',
+            lineWidth: 1,
+            color: 'transparent',
+            data: buildTimeLineFromSeries(datas)
+          });
+
+          items.forEach(function(s, i) {
+            var {
+              name,
+              style: dashStyle,
+              line_width: lineWidth,
+              data,
+              data_min,
+              data_max
+            } = s;
+            base.push({
+              name,
+              dashStyle,
+              lineWidth,
+              data: datas[i],
+              zIndex: i + 10,
+              events: {
+                mouseOver: function(e) {
+                  window.currentSelectedSerie = this;
+                }
+              }
+            });
+          });
+          return base;
+        };
+        var jsonMetaData = [
+          {
+          "id": "Sudden Pressure",
+          "series": [{
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Casing Pressure",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Inj Gas Pres",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "LT Stm Pres",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Return Pressure",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "ST Stm Pres",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Stm Hdr Pres",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }]
+        }, {
+          "id": "Setpoints",
+          "series": [{
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "ESP Speed",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Return Valve",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "VFD Amps",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }]
+        }, {
+          "id": "SAGD Pressure",
+          "series": [{
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Inj Gas Pres",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "LT Stm Rate",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "dash",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Norm Inj BHP",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "ST Stm Rate",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "TFSR",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }]
+        }, {
+          "id": "Return Pressure",
+          "series": [{
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Casing Pressure",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Group Pressure",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Return Pressure",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }]
+        }, {
+          "id": "BHT",
+          "series": [{
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "BHT A",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "BHT B",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "BHT C",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "BHT D",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "BHT E",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "BHT F",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Motor Temp A",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Motor Temp B",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }]
+        }, {
+          "id": "Produced Gas",
+          "series": [{
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Inj Gas Rate",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Retention",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Test PG Rate",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Test Sep Well Gas",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "dash",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "VM PG Rate",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }]
+        }, {
+          "id": "Emulsion",
+          "series": [{
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Oil Rate",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "SOR",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Test Emul Rate",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "dash",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "VM Emul Rate",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }]
+        }, {
+          "id": "BSW",
+          "series": [{
+            "line_width": 1,
+            "style": "dash",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "AGAR BSW",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "BSW",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "dash",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Density BSW",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "dot",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Ops BSW",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "dot",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Ops Chlorides",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }]
+        }, {
+          "id": "Vapour",
+          "series": [{
+            "line_width": 1,
+            "style": "dash",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Calc Flash Vap",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Casing Temp",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Return Temp",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "Test Stm Vapour",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "VM Bad Vapour",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "solid",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "VM Flashed Vapour",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }, {
+            "line_width": 1,
+            "style": "dash",
+            "date_max": 1566165000000,
+            "date_min": 1565560200000,
+            "name": "VM Stm Vapour",
+            "data_min": 1573343395200,
+            "data_max": 1573344000000
+          }]
+        }];
+
+        if (this.series) {
+          var _series;
+          jsonMetaData.forEach(function(s) {
+            if (graphItem[currentElement] == s.id) {
+              _series = s.series;
+            }
+          });
+          _series = buildSeries(_series);
+          //this.series = _series;
+        }
+
+        this.chart = Highcharts.chart(this.chartid, {
+          credits: {
+            enabled: false
+          },
+          title: {
+            text: name
+          },
+          tooltip: {
+            backgroundColor: '#FCFFC5',
+            shared: true,
+            formatter: function(tooltip, b) {
+              var tempdate = (new Date(this.x).toLocaleString("en-GB", {
+                timeZone: 'Canada/Mountain'
+              }));
+              var splittedDate = tempdate.split(",");
+              var splittedtempdate = splittedDate[0].split("/");
+              var finaldate = splittedtempdate[1] + "/" + splittedtempdate[0] + "/" + splittedtempdate[2] + " " + splittedDate[1];
+
+              var xVal = this.x;
+              var arr = ['<b>Date Time:' + finaldate + '</b>'];
+
+              //make sure we always skip first dummy series and only deal with visible series
+              var skipFirstDummySeries = true;
+              var onlyShowVisible = true;
+
+              //get actual data or interpolated data from all series in this chart
+              var allValues = getTnterpolatedValue(xVal, this.points, onlyShowVisible, skipFirstDummySeries);
+              allValues.forEach(function(s) {
+                arr.push(s.name + ':' + s.value);
+              });
+              return arr.join('<br/>');
+            },
+          },
+          yAxis: {
+            crosshair: false,
+          },
+          xAxis: {
+            crosshair: {
+              snap: false, //for smooth mouse movement in the chart
+              width: 1,
+              zIndex: 2
+            },
+            events: {
+              setExtremes: window.HighchartsOverridesyncExtremes
+            },
+            type: 'datetime',
+            dateTimeLabelFormats: { // don't display the dummy year
+              millisecond: '%H:%M',
+              second: '%H:%M',
+              minute: '%H:%M',
+              hour: '%H:%M',
+              day: '%m/%d/%Y',
+              // week: '%m/%d/%Y',
+              month: '%m/%d/%Y',
+              year: '%m/%d/%Y'
+            },
+          },
+          series: _series,
+          plotOptions: {
+            line: {
+              events: {
+                click: function(e) {
+                  if (!currentSelectedSerie) {
+                    return;
+                  }
+                  var color = currentSelectedSerie.color;
+                  var data = currentSelectedSerie.data;
+                  var yAxis = this.chart.yAxis[0];
+                  yAxis.update({
+                    labels: {
+                      style: {
+                        color: color
+                      }
+                    }
+                  });
+                }
+              }
+            }
+          }
+        });
+      },
+
+      chartWithoutShared: function() {
+
+        this.chart = Highcharts.chart(this.chartid, {
+          chart: {
+            backgroundColor: '#000000',
+            type: 'line',
+            scrollablePlotArea: {
+              minWidth: 50,
+              scrollPositionX: 1
+            }
+          },
+          credits: {
+            enabled: false
+          },
+          loading: {
+            labelStyle: {
+              color: 'white',
+              fontFamily: 'GE Inspira Sans'
+            },
+            style: {
+              backgroundColor: 'black',
+              opacity: 1
+            }
+          },
+          legend: {
+            itemMarginTop: 0,
+            itemMarginBottom: 0,
+            itemWidth: 150,
+            padding: 0,
+            itemStyle: {
+
+              fontWeight: 'thin'
+            }
+          },
+          crosshair: {
+            snap: true,
+            width: 1,
+            zIndex: 2
+          },
+          title: false,
+          subtitle: false,
+          xAxis: {
+            crosshair: {
+              opposite: true,
+              label: {
+                enabled: true,
+                color: "white",
+                fontFamily: 'GE Inspira Sans',
+                fontWeight: 100,
+                backgroundColor: "#323232",
+
+                formatter: function(e) {
+                  xVal = e;
+                  var tempdate = (new Date(xVal).toLocaleString("en-GB", {
+                    timeZone: 'Canada/Mountain'
+                  }));
+                  var splittedDate = tempdate.split(",");
+                  var splittedtempdate = splittedDate[0].split("/");
+                  var finaldate = splittedtempdate[1] + "/" + splittedtempdate[0] + "/" + splittedtempdate[2] + " " + splittedDate[1];
+                  var tooltipStr = '<b>' + finaldate + '</b>';
+                  return tooltipStr;
+                }
+
+              }
+            },
+            type: 'datetime',
+            dateTimeLabelFormats: { // don't display the dummy year
+              millisecond: '%H:%M',
+              second: '%H:%M',
+              minute: '%H:%M',
+              hour: '%H:%M',
+              day: '%m/%d/%Y',
+              // week: '%m/%d/%Y',
+              month: '%m/%d/%Y',
+              year: '%m/%d/%Y'
+            },
+            title: {
+              text: 'Date',
+              enabled: false
+            },
+            minorGridLineWidth: 1,
+            gridLineWidth: 1,
+            alternateGridColor: null,
+            tickAmount: 1,
+            plotLines: this.plotlines,
+            events: {
+              setExtremes: function(event) {
+
+                var parent = this["chart"]["renderTo"].parent;
+                parent.xAxis["min"] = event.min;
+                parent.xAxis["max"] = event.max;
+              }
+            }
+          },
+          yAxis: this.yAxis,
+          crosshair: {
+            snap: true,
+            width: 1,
+            zIndex: 2
+          },
+          tooltip: {
+            positioner: function() {
+              return {
+                x: 30,
+                y: 150
+              };
+            },
+            formatter: function() {
+              var xVal = this.x;
+              // var tempdate=(new Date(xVal).toLocaleString("en-GB",{timeZone: 'Canada/Mountain'}));
+              // var splittedDate=tempdate.split(",");
+              // var splittedtempdate=splittedDate[0].split("/");
+              // var finaldate=splittedtempdate[1]+"/"+splittedtempdate[0]+"/"+splittedtempdate[2]+" "+splittedDate[1];
+              var tooltipStr = ""; //'<b>'+finaldate+'</b>';
+              var point = this;
+              return tooltipStr + '<br><span style="color:' + this.color + '">' + Highcharts.numberFormat((this.y), 1, '.') + '</span>:<b><span style="color:' + this.color + '">' + this.series.name + '</b></span><br/>';
+            },
+            shared: false,
+            crosshairs: true,
+            hideDelay: 0,
+            enabled: false
+          },
+          plotOptions: {
+            spline: {
+              marker: {
+                enabled: true
+              }
+            },
+            series: {
+              point: {
+                events: {
+                  mouseOver: function() {
+                    var x = this.x,
+                      series = this.series.chart.series,
+                      val;
+                    series.forEach(function(s) {
+                      s.data.forEach(function(p) {
+                        if (p.x === x) {
+                          val = p.y.toFixed(1);
+                          s.legendItem.element.firstChild.innerHTML = val + ': ' + p.series.name;
+                        }
+                      })
+                    });
+                  }
+                }
+              },
+              marker: {
+                enabledThreshold: 100
+              },
+              step: 'left',
+              //lineWidth: 1,
+              cursor: 'pointer',
+              events: {
+                click: function(event) {
+                  var trendID = event.point.series.userOptions.id;
+                  var parent = this["chart"]["renderTo"].parent;
+                  parent.trendClicked(trendID);
+                }
+              }
+            }
+          },
+          series: this.series,
+          navigation: {
+            menuItemStyle: {
+              fontSize: '10px'
+            }
+          }
+        });
+      },
+
+
+      configureChartWithoutTooltipALL: function() {
+
+        this.chart = Highcharts.chart(this.chartid, {
+          chart: {
+            backgroundColor: '#000000',
+            type: 'line',
+            scrollablePlotArea: {
+              minWidth: 50,
+              scrollPositionX: 1
+            }
+          },
+          credits: {
+            enabled: false
+          },
+          loading: {
+            labelStyle: {
+              color: 'white',
+              fontFamily: 'GE Inspira Sans'
+            },
+            style: {
+              backgroundColor: 'black',
+              opacity: 1
+            }
+          },
+          legend: {
+            itemMarginTop: 0,
+            itemMarginBottom: 0,
+            itemWidth: 150,
+            padding: 0,
+            itemStyle: {
+
+              fontWeight: 'thin'
+            }
+          },
+          crosshair: {
+            snap: true,
+            width: 1,
+            zIndex: 2
+          },
+          title: false,
+          subtitle: false,
+          xAxis: {
+            crosshair: {
+              opposite: true,
+              label: {
+                enabled: true,
+                color: "white",
+                fontFamily: 'GE Inspira Sans',
+                fontWeight: 10,
+                backgroundColor: "#323232",
+
+                formatter: function(e) {
+                  xVal = e;
+                  var tempdate = (new Date(xVal).toLocaleString("en-GB", {
+                    timeZone: 'Canada/Mountain'
+                  }));
+                  var splittedDate = tempdate.split(",");
+                  var splittedtempdate = splittedDate[0].split("/");
+                  var finaldate = splittedtempdate[1] + "/" + splittedtempdate[0] + "/" + splittedtempdate[2] + " " + splittedDate[1];
+                  var tooltipStr = '<b>' + finaldate + '</b>';
+                  return tooltipStr;
+                }
+
+              }
+            },
+            type: 'datetime',
+            dateTimeLabelFormats: { // don't display the dummy year
+              millisecond: '%H:%M',
+              second: '%H:%M',
+              minute: '%H:%M',
+              hour: '%H:%M',
+              day: '%m/%d/%Y',
+              // week: '%m/%d/%Y',
+              month: '%m/%d/%Y',
+              year: '%m/%d/%Y'
+            },
+            title: {
+              text: 'Date',
+              enabled: false
+            },
+            minorGridLineWidth: 1,
+            gridLineWidth: 1,
+            alternateGridColor: null,
+            tickAmount: 1,
+            plotLines: this.plotlines,
+            events: {
+              setExtremes: function(event) {
+
+                var parent = this["chart"]["renderTo"].parent;
+                parent.xAxis["min"] = event.min;
+                parent.xAxis["max"] = event.max;
+              }
+            }
+          },
+          yAxis: this.yAxis,
+          tooltip: {
+            // headerFormat: '<b>{point.key}</b><br>',
+            // xDateFormat: '%b %e, %Y, %H:%M',
+            // // pointFormat: '{point.x:%e. %b}: {point.y:.2f} m',
+            // shared: true,
+            crosshairs: true,
+            // borderColor: '#535C68',
+            enabled: false
+
+          },
+          plotOptions: {
+            spline: {
+              marker: {
+                enabled: true
+              }
+            },
+            series: {
+              point: {
+                events: {
+                  mouseOver: function() {
+                    var x = this.x,
+                      series = this.series.chart.series,
+                      val;
+                    series.forEach(function(s) {
+                      s.data.forEach(function(p) {
+                        if (p.x === x) {
+                          val = p.y.toFixed(1);
+                          s.legendItem.element.firstChild.innerHTML = val + ': ' + p.series.name;
+                        }
+                      })
+                    });
+                  }
+                }
+              },
+              marker: {
+                enabledThreshold: 100
+              },
+              step: 'left',
+              //lineWidth: 1,
+              cursor: 'pointer',
+              events: {
+                click: function(event) {
+                  var trendID = event.point.series.userOptions.id;
+                  var parent = this["chart"]["renderTo"].parent;
+                  parent.trendClicked(trendID);
+                }
+              }
+            }
+          },
+          series: this.series,
+          navigation: {
+            menuItemStyle: {
+              fontSize: '10px'
+            }
+          }
+        });
+      },
+
+    });
+
+  </script>
+</dom-module>
